@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>肺结节3D重建</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+        }
+        #qrcode {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <input type="file" id="dicomInput" accept="application/dicom" style="display: none;">
+        <button onclick="document.getElementById('dicomInput').click()">加载DICOM文件</button>
+        <button onclick="generateQRCode()">生成二维码</button>
+    </div>
+    <div id="qrcode"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xtk@11.0.0/build/xtk.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode.js/lib/qrcode.min.js"></script>
+
+<script>
+let scene, camera, renderer;
+let medicalVolume;
+let qrcode = null;
+
+// 初始化Three.js场景
+function initScene() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // 添加灯光
+    const light = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(light);
+    const pointLight = new THREE.PointLight(0xffffff, 1);
+    pointLight.position.set(100, 100, 100);
+    scene.add(pointLight);
+
+    camera.position.z = 500;
+}
+
+// 加载DICOM文件
+document.getElementById('dicomInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dicomData = new Uint8Array(e.target.result);
+            loadDICOM(dicomData);
+        };
+        reader.readAsArrayBuffer(file);
+    }
+});
+
+// 加载DICOM数据
+function loadDICOM(dicomData) {
+    medicalVolume = new XTK.VTKVolume();
+    medicalVolume.file = dicomData;
+    medicalVolume.parse();
+    processVolume();
+}
+
+// 处理体积数据
+function processVolume() {
+    // 使用Xtk的MarchingCubes算法重建表面
+    const surface = new XTK.VTKMarchingCubes();
+    surface.volume = medicalVolume;
+    surface.isovalue = 0; // 调整iso值以显示不同的结构
+    surface.smooth = true;
+    surface.update();
+
+    // 创建Three.js网格
+    const geometry = new THREE.Geometry();
+    const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+
+    // 将VTK数据转换为Three.js网格
+    const vertices = surface.vertices;
+    const faces = surface.faces;
+
+    for (let i = 0; i < vertices.length; i += 3) {
+        const vertex = new THREE.Vector3(vertices[i], vertices[i+1], vertices[i+2]);
+        geometry.vertices.push(vertex);
+    }
+
+    for (let i = 0; i < faces.length; i += 3) {
+        const face = new THREE.Face3(faces[i], faces[i+1], faces[i+2]);
+        geometry.faces.push(face);
+    }
+
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    // 分析肺结节
+    analyzeNodules();
+
+    // 渲染场景
+    animate();
+}
+
+// 分析肺结节并着色
+function analyzeNodules() {
+    // 假设已经加载了肺结节数据
+    const noduleData = getNoduleData();
+    
+    noduleData.forEach(nodule => {
+        const size = nodule.size;
+        let color;
+        
+        if (size <= 4) {
+            color = new THREE.Color('green');
+        } else if (size <= 8) {
+            color = new THREE.Color('yellow');
+        } else {
+            color = new THREE.Color('purple');
+        }
+
+        // 在场景中添加标记
+        addNoduleMarker(nodule.position, color);
+    });
+}
+
+// 在场景中添加结节标记
+function addNoduleMarker(position, color) {
+    const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+    const sphereMaterial = new THREE.MeshBasicMaterial({ color: color });
+    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    sphere.position.copy(position);
+    scene.add(sphere);
+}
+
+// 生成二维码
+function generateQRCode() {
+    if (!qrcode) {
+        qrcode = new QRCode(document.getElementById('qrcode'), {
+            text: window.location.href,
+            width: 256,
+            height: 256,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+        });
+    }
+    // 生成二维码
+    qrcode.clear();
+    qrcode.make();
+}
+
+// 动画循环
+function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+}
+
+// 初始化应用
+function init() {
+    initScene();
+}
+
+// 初始化应用
+window.onload = init;
+</script>
+</body>
+</html>
